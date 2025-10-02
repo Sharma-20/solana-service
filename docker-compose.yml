@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  solana-deployer:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - LOG_LEVEL=info
+      - MAX_CONCURRENT_DEPLOYMENTS=3
+      - DEPLOYMENT_TIMEOUT_MS=600000
+      - TEMP_DIR_PATH=/app/temp
+      - LOG_DIR_PATH=/app/logs
+    volumes:
+      - ./logs:/app/logs
+      - ./temp:/app/temp
+      - solana-config:/root/.config/solana
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/deploy/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  solana-config:
