@@ -23,9 +23,10 @@ const { buildProgram, deployProgram, verifyDeployment } = require('../services/a
  * @param {string} repoUrl - GitHub repository URL
  * @param {string} network - Target network
  * @param {string} deploymentId - Unique deployment identifier
+ * @param {Object} customWallet - Custom wallet options
  * @returns {Promise<Object>} Deployment result
  */
-async function orchestrateDeployment(repoUrl, network, deploymentId) {
+async function orchestrateDeployment(repoUrl, network, deploymentId, customWallet = null) {
   let projectPath = null;
   let keypairPath = null;
   let walletAddress = null;
@@ -35,7 +36,8 @@ async function orchestrateDeployment(repoUrl, network, deploymentId) {
   try {
     logger.deployment(deploymentId, 'info', 'Starting deployment orchestration', {
       repoUrl,
-      network
+      network,
+      hasCustomWallet: !!customWallet
     });
     
     // Step 1: Clone repository
@@ -52,16 +54,22 @@ async function orchestrateDeployment(repoUrl, network, deploymentId) {
     
     // Step 4: Setup and fund wallet
     logger.deployment(deploymentId, 'info', 'Step 4/6: Setting up wallet');
-    const walletInfo = await setupWallet(deploymentId, network);
+    const walletInfo = await setupWallet(deploymentId, network, customWallet);
     keypairPath = walletInfo.keypairPath;
     walletAddress = walletInfo.address;
     
-    // Ensure wallet has sufficient funds
-    const balance = await ensureFunding(walletAddress, network, deploymentId);
-    logger.deployment(deploymentId, 'info', 'Wallet funded', { 
-      address: walletAddress,
-      balance 
-    });
+    // Ensure wallet has sufficient funds (skip for custom wallets with address only)
+    if (!customWallet || !customWallet.wallet_address) {
+      const balance = await ensureFunding(walletAddress, network, deploymentId);
+      logger.deployment(deploymentId, 'info', 'Wallet funded', { 
+        address: walletAddress,
+        balance 
+      });
+    } else {
+      logger.deployment(deploymentId, 'info', 'Skipping funding for custom wallet', { 
+        address: walletAddress 
+      });
+    }
     
     // Step 5: Build program
     logger.deployment(deploymentId, 'info', 'Step 5/6: Building Anchor program');
@@ -79,7 +87,8 @@ async function orchestrateDeployment(repoUrl, network, deploymentId) {
     logger.deployment(deploymentId, 'info', 'Deployment completed successfully', {
       programId: deployResult.programId,
       signature: deployResult.signature,
-      totalDurationMs: totalDuration
+      totalDurationMs: totalDuration,
+      isCustomWallet: walletInfo.isCustom
     });
     
     return {
@@ -94,6 +103,7 @@ async function orchestrateDeployment(repoUrl, network, deploymentId) {
         deploy_duration_ms: deployResult.duration,
         total_duration_ms: totalDuration,
         verified: verified,
+        is_custom_wallet: walletInfo.isCustom,
         build_logs: buildResult.logs.slice(-50), // Last 50 lines
         deploy_logs: deployResult.logs.slice(-50) // Last 50 lines
       }
@@ -113,7 +123,8 @@ async function orchestrateDeployment(repoUrl, network, deploymentId) {
       await cleanupDirectory(projectPath, deploymentId);
     }
     
-    if (keypairPath) {
+    // Only cleanup keypair if it's not a custom wallet path
+    if (keypairPath && (!customWallet || !customWallet.wallet_path)) {
       cleanupWallet(keypairPath);
     }
   }
@@ -125,7 +136,15 @@ async function orchestrateDeployment(repoUrl, network, deploymentId) {
  */
 router.post('/', asyncHandler(async (req, res) => {
   // Validate request
-  const { repo_url, network } = validateDeploymentRequest(req.body);
+  const validatedData = validateDeploymentRequest(req.body);
+  const { repo_url, network, wallet_address, wallet_keypair, wallet_path } = validatedData;
+  
+  // Extract custom wallet options
+  const customWallet = wallet_address || wallet_keypair || wallet_path ? {
+    wallet_address,
+    wallet_keypair,
+    wallet_path
+  } : null;
   
   // Generate unique deployment ID
   const deploymentId = generateDeploymentId();
@@ -135,13 +154,14 @@ router.post('/', asyncHandler(async (req, res) => {
     deploymentId,
     repoUrl: repo_url,
     network,
+    hasCustomWallet: !!customWallet,
     ip: req.ip,
     userAgent: req.get('user-agent')
   });
   
   try {
     // Execute deployment
-    const result = await orchestrateDeployment(repo_url, network, deploymentId);
+    const result = await orchestrateDeployment(repo_url, network, deploymentId, customWallet);
     
     // Return success response
     res.status(200).json({

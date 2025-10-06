@@ -67,7 +67,12 @@ curl -X POST http://localhost:3000/deploy \
 ```json
 {
   "repo_url": "https://github.com/user/anchor-program",
-  "network": "devnet"  // or "mainnet-beta"
+  "network": "devnet",  // or "mainnet-beta"
+  
+  // Optional: Custom wallet (choose one)
+  "wallet_address": "4uLFQVh7cdWaBDchrx5bzMMcXCxJ5eJYm7Wg7GfgVfxC",  // Use existing wallet address
+  "wallet_keypair": [1,2,3,...],  // 64-byte keypair array
+  "wallet_path": "/path/to/keypair.json"  // Path to keypair file
 }
 ```
 
@@ -86,6 +91,7 @@ curl -X POST http://localhost:3000/deploy \
     "deploy_duration_ms": 12000,
     "total_duration_ms": 57000,
     "verified": true,
+    "is_custom_wallet": false,
     "build_logs": ["..."],
     "deploy_logs": ["..."]
   }
@@ -114,6 +120,41 @@ Check service health status.
 
 ```bash
 curl http://localhost:3000/deploy/health
+```
+
+### Deploy with Custom Wallet
+
+**POST** `/deploy`
+
+Deploy using your own wallet instead of generating a new one.
+
+```bash
+# Option 1: Use wallet address (generates new keypair but logs expected address)
+curl -X POST http://localhost:3000/deploy \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repo_url": "https://github.com/user/anchor-program",
+    "network": "devnet",
+    "wallet_address": "4uLFQVh7cdWaBDchrx5bzMMcXCxJ5eJYm7Wg7GfgVfxC"
+  }'
+
+# Option 2: Use keypair array (64 bytes)
+curl -X POST http://localhost:3000/deploy \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repo_url": "https://github.com/user/anchor-program",
+    "network": "devnet",
+    "wallet_keypair": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64]
+  }'
+
+# Option 3: Use keypair file path
+curl -X POST http://localhost:3000/deploy \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repo_url": "https://github.com/user/anchor-program",
+    "network": "devnet",
+    "wallet_path": "/path/to/your/keypair.json"
+  }'
 ```
 
 ### Service Information

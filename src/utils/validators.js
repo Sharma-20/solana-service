@@ -26,6 +26,28 @@ const isValidNetwork = (network) => {
 };
 
 /**
+ * Validate Solana wallet address
+ * @param {string} address - Wallet address
+ * @returns {boolean} True if valid
+ */
+const isValidWalletAddress = (address) => {
+  // Solana addresses are base58 encoded and typically 32-44 characters
+  const base58Regex = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+  return base58Regex.test(address);
+};
+
+/**
+ * Validate Solana keypair array
+ * @param {Array} keypair - Keypair array
+ * @returns {boolean} True if valid
+ */
+const isValidKeypair = (keypair) => {
+  return Array.isArray(keypair) && 
+         keypair.length === 64 && 
+         keypair.every(byte => typeof byte === 'number' && byte >= 0 && byte <= 255);
+};
+
+/**
  * Deployment request schema
  */
 const deploymentSchema = Joi.object({
@@ -47,7 +69,56 @@ const deploymentSchema = Joi.object({
     .default(NETWORKS.DEVNET)
     .messages({
       'any.only': `Network must be one of: ${Object.values(NETWORKS).join(', ')}`
+    }),
+
+  // Custom wallet options
+  wallet_address: Joi.string()
+    .optional()
+    .custom((value, helpers) => {
+      if (value && !isValidWalletAddress(value)) {
+        return helpers.error('any.invalid');
+      }
+      return value;
     })
+    .messages({
+      'any.invalid': 'Invalid Solana wallet address format'
+    }),
+
+  wallet_keypair: Joi.array()
+    .items(Joi.number().integer().min(0).max(255))
+    .length(64)
+    .optional()
+    .messages({
+      'array.length': 'Keypair must be exactly 64 bytes',
+      'array.items': 'Each keypair byte must be between 0-255'
+    }),
+
+  wallet_path: Joi.string()
+    .optional()
+    .custom((value, helpers) => {
+      if (value && !isSafePath(value)) {
+        return helpers.error('any.invalid');
+      }
+      return value;
+    })
+    .messages({
+      'any.invalid': 'Invalid wallet file path'
+    })
+}).custom((value, helpers) => {
+  // Ensure only one wallet option is provided
+  const walletOptions = [
+    value.wallet_address,
+    value.wallet_keypair,
+    value.wallet_path
+  ].filter(Boolean);
+
+  if (walletOptions.length > 1) {
+    return helpers.error('custom.multipleWalletOptions');
+  }
+
+  return value;
+}).messages({
+  'custom.multipleWalletOptions': 'Only one wallet option can be provided: wallet_address, wallet_keypair, or wallet_path'
 });
 
 /**
@@ -97,6 +168,8 @@ const isSafePath = (filePath) => {
 module.exports = {
   isValidGitHubUrl,
   isValidNetwork,
+  isValidWalletAddress,
+  isValidKeypair,
   validateDeploymentRequest,
   sanitizeInput,
   isSafePath,

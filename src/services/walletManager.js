@@ -139,22 +139,100 @@ function setDefaultKeypair(keypairPath) {
 }
 
 /**
+ * Create keypair from custom keypair array
+ * @param {Array<number>} keypairArray - 64-byte keypair array
+ * @returns {Keypair} Solana keypair
+ */
+function createKeypairFromArray(keypairArray) {
+  try {
+    const secretKey = Uint8Array.from(keypairArray);
+    const keypair = Keypair.fromSecretKey(secretKey);
+    
+    logger.info('Created keypair from custom array', { 
+      publicKey: keypair.publicKey.toBase58() 
+    });
+    
+    return keypair;
+  } catch (error) {
+    logger.error('Failed to create keypair from array', { error: error.message });
+    throw new WalletError('Invalid keypair array format', error.message);
+  }
+}
+
+/**
+ * Load keypair from custom file path
+ * @param {string} keypairPath - Path to keypair file
+ * @returns {Keypair} Solana keypair
+ */
+function loadKeypairFromPath(keypairPath) {
+  try {
+    if (!fs.existsSync(keypairPath)) {
+      throw new Error('Keypair file not found');
+    }
+    
+    const keypair = loadKeypair(keypairPath);
+    
+    logger.info('Loaded keypair from custom path', { 
+      path: keypairPath,
+      publicKey: keypair.publicKey.toBase58()
+    });
+    
+    return keypair;
+  } catch (error) {
+    logger.error('Failed to load keypair from path', { 
+      error: error.message, 
+      path: keypairPath 
+    });
+    throw new WalletError('Failed to load custom keypair', error.message);
+  }
+}
+
+/**
  * Setup wallet for deployment
- * Creates a new keypair and saves it for use in deployment
+ * Creates a new keypair or uses custom wallet
  * @param {string} deploymentId - Unique deployment identifier
  * @param {string} network - Target network (devnet or mainnet-beta)
+ * @param {Object} customWallet - Custom wallet options
  * @returns {Promise<Object>} Wallet information
  */
-async function setupWallet(deploymentId, network) {
-  logger.info('Setting up wallet for deployment', { deploymentId, network });
+async function setupWallet(deploymentId, network, customWallet = null) {
+  logger.info('Setting up wallet for deployment', { 
+    deploymentId, 
+    network,
+    hasCustomWallet: !!customWallet
+  });
   
   try {
-    // Generate new keypair
-    const keypair = generateKeypair();
-    const publicKey = keypair.publicKey.toBase58();
+    let keypair;
+    let keypairPath;
     
-    // Save keypair
-    const keypairPath = saveKeypair(keypair, deploymentId);
+    if (customWallet) {
+      // Handle custom wallet
+      if (customWallet.wallet_keypair) {
+        // Use provided keypair array
+        keypair = createKeypairFromArray(customWallet.wallet_keypair);
+        keypairPath = saveKeypair(keypair, deploymentId);
+      } else if (customWallet.wallet_path) {
+        // Use provided keypair file path
+        keypair = loadKeypairFromPath(customWallet.wallet_path);
+        keypairPath = customWallet.wallet_path;
+      } else if (customWallet.wallet_address) {
+        // Only address provided - generate new keypair but log the expected address
+        logger.warn('Only wallet address provided, generating new keypair', {
+          expectedAddress: customWallet.wallet_address
+        });
+        keypair = generateKeypair();
+        keypairPath = saveKeypair(keypair, deploymentId);
+      } else {
+        throw new Error('Invalid custom wallet configuration');
+      }
+    } else {
+      // Generate new keypair
+      keypair = generateKeypair();
+      keypairPath = saveKeypair(keypair, deploymentId);
+    }
+    
+    const publicKey = keypair.publicKey.toBase58();
     
     // Set as default keypair for Solana CLI
     setDefaultKeypair(keypairPath);
@@ -162,7 +240,8 @@ async function setupWallet(deploymentId, network) {
     const walletInfo = {
       address: publicKey,
       keypairPath,
-      network
+      network,
+      isCustom: !!customWallet
     };
     
     logger.info('Wallet setup complete', walletInfo);

@@ -29,10 +29,8 @@ RUN rustup default stable
 RUN sh -c "$(curl -sSfL https://release.solana.com/stable/install)"
 ENV PATH="/root/.local/share/solana/install/active_release/bin:$PATH"
 
-# Install Anchor CLI
-RUN cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
-RUN avm install latest
-RUN avm use latest
+# Install Anchor CLI directly
+RUN cargo install --git https://github.com/coral-xyz/anchor anchor-cli --locked --force
 
 # Stage 2: Runtime environment
 FROM ubuntu:22.04
@@ -52,10 +50,12 @@ RUN apt-get update && apt-get install -y \
 RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
 RUN apt-get install -y nodejs
 
-# Copy Rust and Solana CLI from builder
+# Copy Rust and Cargo from builder
 COPY --from=builder /usr/local/rustup /usr/local/rustup
 COPY --from=builder /usr/local/cargo /usr/local/cargo
-COPY --from=builder /root/.local/share/solana /root/.local/share/solana
+
+# Install Solana CLI in runtime stage
+RUN sh -c "$(curl -sSfL https://release.solana.com/stable/install)"
 
 # Set PATH
 ENV PATH="/usr/local/cargo/bin:/root/.local/share/solana/install/active_release/bin:$PATH"
@@ -71,7 +71,9 @@ RUN npm ci --only=production
 
 # Copy application code
 COPY src/ ./src/
-COPY .env.example ./.env
+
+# Create environment file if it doesn't exist
+RUN echo "PORT=3000\nNODE_ENV=production\nLOG_LEVEL=info" > .env
 
 # Create necessary directories
 RUN mkdir -p temp logs
@@ -79,6 +81,10 @@ RUN mkdir -p temp logs
 # Create non-root user
 RUN useradd -m -u 1000 deployer && \
     chown -R deployer:deployer /app
+
+# Install Solana CLI for the deployer user
+RUN su - deployer -c "sh -c \"\$(curl -sSfL https://release.solana.com/stable/install)\""
+RUN su - deployer -c "echo 'export PATH=\"\$HOME/.local/share/solana/install/active_release/bin:\$PATH\"' >> ~/.bashrc"
 
 # Switch to non-root user
 USER deployer
